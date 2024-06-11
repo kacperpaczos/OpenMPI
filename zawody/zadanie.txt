@@ -1,5 +1,7 @@
 W pewnym akademiku studenci postanowili urządzić zawody w celu pielęgnowania szlachetnego ducha sportu. Po próbach z podnoszeniem ciężarów oraz biegach na 200 metrów, ostatecznie zadecydowano, że najlepiej do wizerunku studentów Politechniki Poznańskiej będą pasować zawody w chlaniu na umór. Pomysł ten tak się spodobał, że zawody zaczęto urządzać codziennie, a wreszcie ustalono, że dowolna grupa studentów może równocześnie z innymi przystąpić do chlania na umór. Samorząd studencki wyznaczył grupę arbitrów o liczności A (parametr). Arbitrzy są nierozróżnialni i należy ich traktować jako jeden zasób o liczności A.
 
-W celu odbycia zawodów studenci (dowolna podgrupa o liczności większej niż 1) najpierw zgłaszają chęć uczestnictwa (brak punktu centralnego). Następnie studenci ubiegają się o dostęp do któregoś z arbitrów. Następnie odbywają się zawody w chlaniu.
+W celu odbycia zawodów studenci (dowolna podgrupa o liczności większej niż 1) 
+najpierw zgłaszają chęć uczestnictwa (brak punktu centralnego). 
+Następnie studenci ubiegają się o dostęp do któregoś z arbitrów. Następnie odbywają się zawody w chlaniu.
 
 Wersja uproszczona: : Procesy symbolizują grupę studentów - w związku z tym pozostaje tylko problem ubiegania się o arbitrów.
