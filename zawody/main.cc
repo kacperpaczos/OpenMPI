@@ -150,11 +150,24 @@ int main(int argc, char **argv) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &max_rank);
 
-	debug("mój rank %d (maksymalny rank %d)\n", my_rank, max_rank);
+	if (argc < 2) {
+		fprintf(stderr, "Użycie: %s liczba_arbitrów\n", argv[0]);
+		MPI_Finalize();
+		return 1;
+	}
+
+	int num_arbiters = atoi(argv[1]);
+	if (num_arbiters < 1) {
+		fprintf(stderr, "Liczba arbitrów musi być większa niż 0.\n");
+		MPI_Finalize();
+		return 1;
+	}
+
+	debug("mój rank %d (maksymalny rank %d), liczba arbitrów %d\n", my_rank, max_rank, num_arbiters);
 
 	srand(time(0));
 	for (int iter = 1; true; iter++) {
-		int num_students = rand() % max_students + 1;
+		int num_students = rand() % (max_students - 1) + 2;
 		exited = 0;
 
 		debug("liczba studentów %d\n", num_students);
