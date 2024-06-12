@@ -28,7 +28,7 @@ constexpr double MAX_COMPETITION_TIME = 5.0;
 // Czas snu między sprawdzeniami wiadomości (w mikrosekundach)
 constexpr int SLEEP_DURATION = 2000;
 
-enum class StudentState { NOT_PARTICIPATING, WANTS_TO_PARTICIPATE, HAS_ACCESS_TO_ARBITER, PARTICIPATING };
+enum class StudentState { NOT_PARTICIPATING, WANTS_TO_PARTICIPATE, HAS_ACCESS_TO_ARBITER, PARTICIPATING, DEADENDO };
 array<StudentState, MAX_STUDENTS + 1> student_states;
 
 bool is_waiting_for_message = false;
@@ -155,6 +155,7 @@ void request_arbiter_access(int student_id) {
     is_requesting[student_id] = true;
     approvals_received[student_id] = 0;
     while (approvals_received[student_id] < max_rank - 1) {  // Wszyscy muszą zaakceptować
+        debug("Otrzymano %d zatwierdzeń dla studenta %d\n", approvals_received[student_id], student_id);
         handle_message(request_time);
         usleep(SLEEP_DURATION);
     }
@@ -210,26 +211,35 @@ int main(int argc, char **argv) {
     unsigned seed = time(NULL) + my_rank;
     std::mt19937 generator(seed);
 
-    if (my_rank == 0) {
-        std::uniform_int_distribution<int> student_distribution(2, MAX_STUDENTS);
-        num_students = student_distribution(generator);
-        debug("Liczba studentów: %d\n", num_students);
-        for (int rank = 1; rank < max_rank; rank++) {
-            send_message(rank, MessageTag::NUM_STUDENTS, -1, num_students);
-        }
-    } else {
-        // Inne procesy czekają na wiadomość od root
-        while (true) {
-            handle_message();
-            if (received_message.tag == MessageTag::NUM_STUDENTS) {
-                break;
-            }
-            usleep(SLEEP_DURATION);
-        }
-    }
-
     for (int iter = 1; true; iter++) {
         processes_exited = 0;
+
+        if (my_rank == 0) {
+            std::uniform_int_distribution<int> student_distribution(2, MAX_STUDENTS);
+            num_students = student_distribution(generator);
+            debug("Liczba studentów: %d\n", num_students);
+            for (int rank = 1; rank < max_rank; rank++) {
+                send_message(rank, MessageTag::NUM_STUDENTS, -1, num_students);
+            }
+        } else {
+            // Inne procesy czekają na wiadomość od root
+            while (true) {
+                handle_message();
+                if (received_message.tag == MessageTag::NUM_STUDENTS) {
+                    break;
+                }
+                usleep(SLEEP_DURATION);
+            }
+        }
+
+        if (my_rank > num_students - 1) {
+            student_states[my_rank] = StudentState::DEADENDO;
+            debug(RED "jest w stanie DEADENDO" NLC);
+            while (true) {
+                handle_message();
+                usleep(SLEEP_DURATION);
+            }
+        }
 
         debug("liczba studentów %d\n", num_students);
         debug(YLW "wejdzie na zawody" NLC);
@@ -257,3 +267,4 @@ int main(int argc, char **argv) {
     MPI_Finalize();
     return 0;
 }
+
