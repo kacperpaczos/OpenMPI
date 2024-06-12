@@ -18,8 +18,8 @@
 
 using namespace std;
 
-enum class MessageTag { REQUEST, APPROVE, TERMINATE };
-struct Message { MessageTag tag; int timestamp; int queue_id; };
+enum class MessageTag { REQUEST, APPROVE, TERMINATE, NUM_STUDENTS };
+struct Message { MessageTag tag; int timestamp; int queue_id; int random_value; };
 
 // Maksymalna liczba studentów biorących udział w zawodach
 constexpr int MAX_STUDENTS = 20;
@@ -42,6 +42,7 @@ array<bool, MAX_STUDENTS + 1> is_requesting = {false};
 array<vector<int>, MAX_STUDENTS + 1> deferred_requests;
 array<int, MAX_STUDENTS + 1> approvals_received = {0};
 int processes_exited = 0;
+int num_students;
 
 #define debug(format, ...) fprintf(stderr, "%4d P%d " format, local_time, my_rank, ##__VA_ARGS__)
 
@@ -67,8 +68,8 @@ bool receive_message(int *source, Message *msg) {
     return true;
 }
 
-void send_message(int destination, MessageTag tag, int queue_id) {
-    Message msg {.tag = tag, .timestamp = local_time, .queue_id = queue_id};
+void send_message(int destination, MessageTag tag, int queue_id, int random_value = 0) {
+    Message msg {.tag = tag, .timestamp = local_time, .queue_id = queue_id, .random_value = random_value};
     MPI_Send(&msg, sizeof(Message), MPI_BYTE, destination, 0, MPI_COMM_WORLD);
 }
 
@@ -100,6 +101,9 @@ void handle_message(int request_time = -1) {
         approvals_received[received_message.queue_id] += 1;
     } else if (received_message.tag == MessageTag::TERMINATE) {
         processes_exited += 1;
+    } else if (received_message.tag == MessageTag::NUM_STUDENTS) {
+        num_students = received_message.random_value;
+        debug("Otrzymano liczbę studentów: %d\n", num_students);
     }
 }
 
@@ -206,8 +210,23 @@ int main(int argc, char **argv) {
     unsigned seed = time(NULL) + my_rank;
     std::mt19937 generator(seed);
 
-    std::uniform_int_distribution<int> student_distribution(2, MAX_STUDENTS);
-    int num_students = student_distribution(generator);
+    if (my_rank == 0) {
+        std::uniform_int_distribution<int> student_distribution(2, MAX_STUDENTS);
+        num_students = student_distribution(generator);
+        debug("Liczba studentów: %d\n", num_students);
+        for (int rank = 1; rank < max_rank; rank++) {
+            send_message(rank, MessageTag::NUM_STUDENTS, -1, num_students);
+        }
+    } else {
+        // Inne procesy czekają na wiadomość od root
+        while (true) {
+            handle_message();
+            if (received_message.tag == MessageTag::NUM_STUDENTS) {
+                break;
+            }
+            usleep(SLEEP_DURATION);
+        }
+    }
 
     for (int iter = 1; true; iter++) {
         processes_exited = 0;
@@ -238,5 +257,3 @@ int main(int argc, char **argv) {
     MPI_Finalize();
     return 0;
 }
-
-
