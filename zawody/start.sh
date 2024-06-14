@@ -7,4 +7,4 @@ rm -f a.out
 make
 
 # Uruchomienie programu
-mpiexec --oversubscribe -n 4 ./a.out 1
+mpiexec --oversubscribe -n 20 ./a.out 4

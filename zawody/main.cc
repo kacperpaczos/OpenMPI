@@ -18,7 +18,7 @@
 
 using namespace std;
 
-enum class MessageTag { REQUEST, APPROVE, TERMINATE, NUM_STUDENTS };
+enum class MessageTag { REQUEST, APPROVE, TERMINATE, NUM_STUDENTS, READY_FOR_NEXT_COMPETITION };
 struct Message { MessageTag tag; int timestamp; int queue_id; int random_value; };
 
 // Maksymalna liczba studentów biorących udział w zawodach
@@ -41,7 +41,7 @@ array<bool, MAX_STUDENTS + 1> is_executing = {false};
 array<bool, MAX_STUDENTS + 1> is_requesting = {false};
 array<vector<int>, MAX_STUDENTS + 1> deferred_requests;
 array<int, MAX_STUDENTS + 1> approvals_received = {0};
-int processes_exited = 0;
+int processes_ready_for_next_competition = 0;
 int num_students;
 
 #define debug(format, ...) fprintf(stderr, "%4d P%d " format, local_time, my_rank, ##__VA_ARGS__)
@@ -100,10 +100,12 @@ void handle_message(int request_time = -1) {
     } else if (received_message.tag == MessageTag::APPROVE) {
         approvals_received[received_message.queue_id] += 1;
     } else if (received_message.tag == MessageTag::TERMINATE) {
-        processes_exited += 1;
+        processes_ready_for_next_competition += 1;
     } else if (received_message.tag == MessageTag::NUM_STUDENTS) {
         num_students = received_message.random_value;
         debug("Otrzymano liczbę studentów: %d\n", num_students);
+    } else if (received_message.tag == MessageTag::READY_FOR_NEXT_COMPETITION) {
+        processes_ready_for_next_competition += 1;
     }
 }
 
@@ -117,6 +119,7 @@ void enter_critical_section(int queue_id, int capacity) {
     is_requesting[queue_id] = true;
     approvals_received[queue_id] = 0;
     while (approvals_received[queue_id] < max_rank - capacity) {
+        //debug("Oczekuje na %d zatwierdzeń, otrzymano %d\n", max_rank - capacity, approvals_received[queue_id]);
         handle_message(request_time);
         usleep(SLEEP_DURATION);
     }
@@ -134,15 +137,38 @@ void leave_critical_section(int queue_id) {
 }
 
 void synchronize_processes() {
-    processes_exited += 1;
+    if (student_states[my_rank] != StudentState::DEADENDO) {
+        processes_ready_for_next_competition += 1;
+        debug("Proces %d zwiększył processes_ready_for_next_competition do %d\n", my_rank, processes_ready_for_next_competition);
+    }
 
     update_time();
     for (int rank : create_range(0, max_rank))
         if (rank != my_rank)
-            send_message(rank, MessageTag::TERMINATE, -1);
+            send_message(rank, MessageTag::READY_FOR_NEXT_COMPETITION, -1);
 
-    while (processes_exited < max_rank)
+    int active_processes = 0;
+    for (int i = 0; i < max_rank; i++) {
+        if (student_states[i] != StudentState::DEADENDO) {
+            active_processes++;
+        }
+    }
+
+    debug("Proces %d czeka na synchronizację. processes_ready_for_next_competition: %d, active_processes: %d\n", my_rank, processes_ready_for_next_competition, active_processes);
+
+    while (processes_ready_for_next_competition < active_processes) {
         handle_message();
+        update_time();  // Dodaj to wywołanie, aby zaktualizować local_time
+        debug("Proces %d sprawdza wiadomości. processes_ready_for_next_competition: %d, active_processes: %d\n", my_rank, processes_ready_for_next_competition, active_processes);
+        if (student_states[my_rank] == StudentState::DEADENDO) {
+            break;
+        }
+    }
+
+    // Stosowany komunikat po zsynchronizowaniu wszystkich procesów
+    if (processes_ready_for_next_competition == active_processes && student_states[my_rank] != StudentState::DEADENDO) {
+        debug(GRN "Wszystkie aktywne procesy są gotowe na następne zawody." NLC);
+    }
 }
 
 void request_arbiter_access(int student_id) {
@@ -155,7 +181,7 @@ void request_arbiter_access(int student_id) {
     is_requesting[student_id] = true;
     approvals_received[student_id] = 0;
     while (approvals_received[student_id] < max_rank - 1) {  // Wszyscy muszą zaakceptować
-        debug("Otrzymano %d zatwierdzeń dla studenta %d\n", approvals_received[student_id], student_id);
+        //debug("Otrzymano %d zatwierdzeń dla studenta %d\n", approvals_received[student_id], student_id);
         handle_message(request_time);
         usleep(SLEEP_DURATION);
     }
@@ -173,7 +199,7 @@ void release_arbiter(int student_id) {
     deferred_requests[student_id].clear();
     is_executing[student_id] = false;
     student_states[my_rank] = StudentState::NOT_PARTICIPATING;
-    debug(MAG "nie bierze [już/jeszcze] udziału w zawodach" NLC);
+    debug(MAG "czeka na nowe zawody, zwalnia arbitra" NLC);
 }
 
 void change_state_to_wants_to_participate(int student_id, std::mt19937 &generator) {
@@ -212,7 +238,7 @@ int main(int argc, char **argv) {
     std::mt19937 generator(seed);
 
     for (int iter = 1; true; iter++) {
-        processes_exited = 0;
+        processes_ready_for_next_competition = 0;
 
         if (my_rank == 0) {
             std::uniform_int_distribution<int> student_distribution(2, MAX_STUDENTS);
@@ -258,8 +284,17 @@ int main(int argc, char **argv) {
         debug(RED "wyszedł z zawodów" NLC);
         release_arbiter(my_rank);
 
+        debug("synchronizuje, rank: %d\n", my_rank);
         synchronize_processes();
-        if (my_rank == 0) {
+        
+        int active_students = 0;
+        for (int i = 0; i < num_students; i++) {
+            if (student_states[i] != StudentState::DEADENDO) {
+                active_students++;
+            }
+        }
+        
+        if (processes_ready_for_next_competition == active_students) {
             debug(RED "-- iteracja %d ----------------" NLC, iter);
         }
     }
